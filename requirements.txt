@@ -2,4 +2,7 @@ streamlit
 edge-tts
 pymupdf
 python-docx
+pytesseract
+pdf2image
+pillow
 pytest
