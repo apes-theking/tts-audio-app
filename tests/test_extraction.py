@@ -12,6 +12,8 @@ sys.modules["pytesseract"] = MagicMock()
 sys.modules["pdf2image"] = MagicMock()
 sys.modules["PIL"] = MagicMock()
 sys.modules["PIL.Image"] = MagicMock()
+sys.modules["cv2"] = MagicMock()
+sys.modules["numpy"] = MagicMock()
 
 # Add repo root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -70,9 +72,11 @@ class TestExtraction(unittest.TestCase):
 
     def test_extract_image(self):
         app.pytesseract.image_to_string.return_value = "Image Text"
-        file_mock = MagicMock()
+        # Since extract_text_from_image now accepts an image directly (PIL or numpy),
+        # we pass a mock object representing the image.
+        image_mock = MagicMock()
 
-        pages = app.extract_text_from_image(file_mock)
+        pages = app.extract_text_from_image(image_mock)
 
         self.assertEqual(len(pages), 1)
         self.assertEqual(pages[0], "Image Text")

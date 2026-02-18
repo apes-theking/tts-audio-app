@@ -7,11 +7,41 @@ import docx
 import pytesseract
 from pdf2image import convert_from_bytes
 from PIL import Image
+import cv2
+import numpy as np
 
-def extract_text_from_image(file):
-    """Extracts text from an image file."""
-    file.seek(0)
-    image = Image.open(file)
+def process_image_for_ocr(image):
+    """
+    Applies pre-processing to an image for better OCR results.
+    Args:
+        image: A PIL Image object.
+    Returns:
+        A processed image as a numpy array.
+    """
+    # Convert PIL Image to numpy array
+    img_array = np.array(image)
+
+    # Convert to grayscale
+    if len(img_array.shape) == 3 and img_array.shape[2] == 3:
+        gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+    elif len(img_array.shape) == 3 and img_array.shape[2] == 4:
+        gray = cv2.cvtColor(img_array, cv2.COLOR_RGBA2GRAY)
+    else:
+        # Assuming already grayscale
+        gray = img_array
+
+    # Apply Gaussian Blur to reduce noise
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+
+    # Apply Adaptive Thresholding
+    thresh = cv2.adaptiveThreshold(
+        blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
+    )
+
+    return thresh
+
+def extract_text_from_image(image):
+    """Extracts text from a pre-processed image (numpy array or PIL Image)."""
     text = pytesseract.image_to_string(image)
     return [text]
 
@@ -109,35 +139,69 @@ def main():
     # OCR Settings
     force_ocr = st.sidebar.checkbox("Force OCR (for scanned docs)")
 
-    # File Uploader
-    uploaded_file = st.file_uploader("Upload a file", type=["pdf", "docx", "jpg", "jpeg", "png"])
+    # File Uploader & Camera Input
+    st.subheader("Input Source")
+    input_method = st.radio("Choose input method:", ("Upload File", "Camera"))
+
+    uploaded_file = None
+    camera_file = None
+
+    if input_method == "Upload File":
+        uploaded_file = st.file_uploader("Upload a file", type=["pdf", "docx", "jpg", "jpeg", "png"])
+    else:
+        camera_file = st.camera_input("Take a photo")
+
+    # Determine which file to use
+    active_file = uploaded_file if input_method == "Upload File" else camera_file
 
     # Initialize Session State
     if "pages" not in st.session_state:
         st.session_state.pages = []
     if "current_page" not in st.session_state:
         st.session_state.current_page = 0
-    if "last_uploaded_file" not in st.session_state:
-        st.session_state.last_uploaded_file = None
+    if "last_processed_file_id" not in st.session_state:
+        st.session_state.last_processed_file_id = None
     if "last_force_ocr" not in st.session_state:
         st.session_state.last_force_ocr = False
 
-    if uploaded_file is not None:
+    # Use a unique identifier for the file (name or buffer hash)
+    # Camera input returns a BytesIO object with a name like 'camera_input.jpg' usually, or a generic name.
+    # UploadedFile has .name and .file_id (internal) or simply content.
+    # We can use .name but camera input might reuse names. Streamlit camera input name is usually constant?
+    # Actually, st.camera_input returns a UploadedFile object.
+
+    current_file_id = None
+    if active_file is not None:
+        # Simple ID: name + size
+        current_file_id = f"{active_file.name}_{active_file.size}"
+
+    if active_file is not None:
         # Check if file changed or OCR settings changed
-        file_changed = (st.session_state.last_uploaded_file != uploaded_file.name)
+        file_changed = (st.session_state.last_processed_file_id != current_file_id)
         ocr_changed = (st.session_state.last_force_ocr != force_ocr)
 
         if file_changed or ocr_changed:
-            file_type = uploaded_file.name.split(".")[-1].lower()
+            file_type = active_file.name.split(".")[-1].lower()
 
             with st.spinner("Extracting text..."):
                 try:
+                    pages = []
                     if file_type == "pdf":
-                        pages = extract_text_from_pdf(uploaded_file, force_ocr=force_ocr)
+                        pages = extract_text_from_pdf(active_file, force_ocr=force_ocr)
                     elif file_type == "docx":
-                        pages = extract_text_from_docx(uploaded_file)
+                        pages = extract_text_from_docx(active_file)
                     elif file_type in ["jpg", "jpeg", "png"]:
-                        pages = extract_text_from_image(uploaded_file)
+                        # Rewind file just in case
+                        active_file.seek(0)
+                        pil_image = Image.open(active_file)
+
+                        # Process Image
+                        processed_image = process_image_for_ocr(pil_image)
+
+                        # Store processed image in session state to display it (optional, but good for UX)
+                        st.session_state.last_processed_image = processed_image
+
+                        pages = extract_text_from_image(processed_image)
                     else:
                         st.error("Unsupported file format.")
                         return
@@ -145,7 +209,7 @@ def main():
                     cleaned_pages = [clean_text(page) for page in pages]
                     st.session_state.pages = cleaned_pages
                     st.session_state.current_page = 0
-                    st.session_state.last_uploaded_file = uploaded_file.name
+                    st.session_state.last_processed_file_id = current_file_id
                     st.session_state.last_force_ocr = force_ocr
 
                     # Initialize editor content
@@ -157,6 +221,11 @@ def main():
                 except Exception as e:
                     st.error(f"Error extracting text: {e}")
                     return
+
+        # Display Processed Image if available (and relevant)
+        if "last_processed_image" in st.session_state and active_file.name.split(".")[-1].lower() in ["jpg", "jpeg", "png"]:
+             with st.expander("Processed Image (Debug View)"):
+                 st.image(st.session_state.last_processed_image, caption="Processed Image for OCR", use_container_width=True)
 
         # UI Display
         if st.session_state.pages:
@@ -191,17 +260,19 @@ def main():
                             st.download_button(
                                 label="Download MP3",
                                 data=audio_bytes,
-                                file_name=f"{uploaded_file.name.split('.')[0]}.mp3",
+                                file_name=f"{active_file.name.split('.')[0]}.mp3",
                                 mime="audio/mp3"
                             )
                         except Exception as e:
                             st.error(f"An error occurred during audio generation: {e}")
     else:
         # Reset state if file is removed
-        if st.session_state.last_uploaded_file is not None:
+        if st.session_state.last_processed_file_id is not None:
             st.session_state.pages = []
             st.session_state.current_page = 0
-            st.session_state.last_uploaded_file = None
+            st.session_state.last_processed_file_id = None
+            if "last_processed_image" in st.session_state:
+                del st.session_state.last_processed_image
 
 if __name__ == "__main__":
     main()
