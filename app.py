@@ -10,11 +10,12 @@ from PIL import Image
 import cv2
 import numpy as np
 
-def process_image_for_ocr(image):
+def process_image_for_ocr(image, threshold_value=128):
     """
     Applies pre-processing to an image for better OCR results.
     Args:
         image: A PIL Image object.
+        threshold_value: The manual threshold value for binary conversion.
     Returns:
         A processed image as a numpy array.
     """
@@ -30,13 +31,8 @@ def process_image_for_ocr(image):
         # Assuming already grayscale
         gray = img_array
 
-    # Apply Gaussian Blur to reduce noise
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-
-    # Apply Adaptive Thresholding
-    thresh = cv2.adaptiveThreshold(
-        blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
-    )
+    # Apply Binary Threshold
+    _, thresh = cv2.threshold(gray, threshold_value, 255, cv2.THRESH_BINARY)
 
     return thresh
 
@@ -163,29 +159,38 @@ def main():
         st.session_state.last_processed_file_id = None
     if "last_force_ocr" not in st.session_state:
         st.session_state.last_force_ocr = False
-
-    # Use a unique identifier for the file (name or buffer hash)
-    # Camera input returns a BytesIO object with a name like 'camera_input.jpg' usually, or a generic name.
-    # UploadedFile has .name and .file_id (internal) or simply content.
-    # We can use .name but camera input might reuse names. Streamlit camera input name is usually constant?
-    # Actually, st.camera_input returns a UploadedFile object.
+    if "last_threshold_value" not in st.session_state:
+        st.session_state.last_threshold_value = 128
 
     current_file_id = None
     if active_file is not None:
         # Simple ID: name + size
         current_file_id = f"{active_file.name}_{active_file.size}"
 
+    # Threshold Slider (Only visible for images)
+    threshold_val = 128
+    is_image = False
     if active_file is not None:
-        # Check if file changed or OCR settings changed
+         file_type = active_file.name.split(".")[-1].lower()
+         if file_type in ["jpg", "jpeg", "png"]:
+             is_image = True
+             threshold_val = st.slider("Adjust Shadow/Contrast (Threshold)", 0, 255, 128, help="Slide until the text is clear black and the background is white.")
+
+    if active_file is not None:
+        # Check if file changed or OCR settings/Threshold changed
         file_changed = (st.session_state.last_processed_file_id != current_file_id)
         ocr_changed = (st.session_state.last_force_ocr != force_ocr)
+        threshold_changed = (st.session_state.last_threshold_value != threshold_val)
 
-        if file_changed or ocr_changed:
+        if file_changed or ocr_changed or (is_image and threshold_changed):
             file_type = active_file.name.split(".")[-1].lower()
 
-            with st.spinner("Extracting text..."):
+            with st.spinner("Processing..."):
                 try:
                     pages = []
+                    processed_image = None
+                    original_image = None
+
                     if file_type == "pdf":
                         pages = extract_text_from_pdf(active_file, force_ocr=force_ocr)
                     elif file_type == "docx":
@@ -193,13 +198,14 @@ def main():
                     elif file_type in ["jpg", "jpeg", "png"]:
                         # Rewind file just in case
                         active_file.seek(0)
-                        pil_image = Image.open(active_file)
+                        original_image = Image.open(active_file)
 
                         # Process Image
-                        processed_image = process_image_for_ocr(pil_image)
+                        processed_image = process_image_for_ocr(original_image, threshold_value=threshold_val)
 
-                        # Store processed image in session state to display it (optional, but good for UX)
+                        # Store processed image in session state to display it
                         st.session_state.last_processed_image = processed_image
+                        st.session_state.last_original_image = original_image
 
                         pages = extract_text_from_image(processed_image)
                     else:
@@ -211,6 +217,7 @@ def main():
                     st.session_state.current_page = 0
                     st.session_state.last_processed_file_id = current_file_id
                     st.session_state.last_force_ocr = force_ocr
+                    st.session_state.last_threshold_value = threshold_val
 
                     # Initialize editor content
                     if cleaned_pages:
@@ -219,13 +226,18 @@ def main():
                         st.session_state.editor = ""
 
                 except Exception as e:
-                    st.error(f"Error extracting text: {e}")
+                    st.error(f"Error processing document: {e}")
                     return
 
-        # Display Processed Image if available (and relevant)
-        if "last_processed_image" in st.session_state and active_file.name.split(".")[-1].lower() in ["jpg", "jpeg", "png"]:
-             with st.expander("Processed Image (Debug View)"):
-                 st.image(st.session_state.last_processed_image, caption="Processed Image for OCR", use_container_width=True)
+        # Display Images if available (and relevant)
+        if "last_processed_image" in st.session_state and is_image:
+             with st.expander("👁️ View Processed Image", expanded=True):
+                 col1, col2 = st.columns(2)
+                 with col1:
+                     if "last_original_image" in st.session_state:
+                         st.image(st.session_state.last_original_image, caption="Original", use_container_width=True)
+                 with col2:
+                     st.image(st.session_state.last_processed_image, caption="What the AI Sees", use_container_width=True)
 
         # UI Display
         if st.session_state.pages:
@@ -273,6 +285,8 @@ def main():
             st.session_state.last_processed_file_id = None
             if "last_processed_image" in st.session_state:
                 del st.session_state.last_processed_image
+            if "last_original_image" in st.session_state:
+                del st.session_state.last_original_image
 
 if __name__ == "__main__":
     main()

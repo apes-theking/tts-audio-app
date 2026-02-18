@@ -33,17 +33,14 @@ class TestPreprocessing(unittest.TestCase):
         mock_gray = MagicMock()
         app.cv2.cvtColor.return_value = mock_gray
 
-        mock_blurred = MagicMock()
-        app.cv2.GaussianBlur.return_value = mock_blurred
+        mock_thresh_ret = (0, MagicMock())
+        app.cv2.threshold.return_value = mock_thresh_ret
 
-        mock_thresh = MagicMock()
-        app.cv2.adaptiveThreshold.return_value = mock_thresh
-
-        # Call function
-        result = app.process_image_for_ocr(mock_pil_image)
+        # Call function with default threshold
+        result = app.process_image_for_ocr(mock_pil_image, threshold_value=100)
 
         # Verify result is the final thresholded image
-        self.assertEqual(result, mock_thresh)
+        self.assertEqual(result, mock_thresh_ret[1])
 
         # Verify steps
         # 1. Convert to numpy
@@ -52,12 +49,9 @@ class TestPreprocessing(unittest.TestCase):
         # 2. Convert to Grayscale
         app.cv2.cvtColor.assert_called_once_with(mock_np_array, app.cv2.COLOR_RGB2GRAY)
 
-        # 3. Gaussian Blur
-        app.cv2.GaussianBlur.assert_called_once_with(mock_gray, (5, 5), 0)
-
-        # 4. Adaptive Threshold
-        app.cv2.adaptiveThreshold.assert_called_once_with(
-            mock_blurred, 255, app.cv2.ADAPTIVE_THRESH_GAUSSIAN_C, app.cv2.THRESH_BINARY, 11, 2
+        # 3. Binary Threshold with custom value
+        app.cv2.threshold.assert_called_once_with(
+            mock_gray, 100, 255, app.cv2.THRESH_BINARY
         )
 
 if __name__ == '__main__':
