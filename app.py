@@ -4,13 +4,34 @@ import asyncio
 import io
 import fitz  # pymupdf
 import docx
+import pytesseract
+from pdf2image import convert_from_bytes
+from PIL import Image
 
-def extract_text_from_pdf(file):
+def extract_text_from_image(file):
+    """Extracts text from an image file."""
+    image = Image.open(file)
+    text = pytesseract.image_to_string(image)
+    return text
+
+def extract_text_from_pdf(file, force_ocr=False):
     """Extracts text from a PDF file."""
+    file.seek(0)
+    pdf_bytes = file.read()
     text = ""
-    with fitz.open(stream=file.read(), filetype="pdf") as doc:
-        for page in doc:
-            text += page.get_text()
+
+    if not force_ocr:
+        with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+            for page in doc:
+                text += page.get_text()
+
+    # Fallback to OCR if forced, or if extracted text is empty/sparse
+    if force_ocr or not text.strip() or len(text.strip()) < 50:
+        images = convert_from_bytes(pdf_bytes)
+        text = ""
+        for image in images:
+            text += pytesseract.image_to_string(image)
+
     return text
 
 def extract_text_from_docx(file):
@@ -51,17 +72,22 @@ def main():
     selected_voice_name = st.sidebar.selectbox("Select Voice", list(voice_options.keys()))
     selected_voice = voice_options[selected_voice_name]
 
+    # OCR Settings
+    force_ocr = st.sidebar.checkbox("Force OCR (for scanned docs)")
+
     # File Uploader
-    uploaded_file = st.file_uploader("Upload a file", type=["pdf", "docx"])
+    uploaded_file = st.file_uploader("Upload a file", type=["pdf", "docx", "jpg", "jpeg", "png"])
 
     if uploaded_file is not None:
         file_type = uploaded_file.name.split(".")[-1].lower()
         
         with st.spinner("Extracting text..."):
             if file_type == "pdf":
-                text = extract_text_from_pdf(uploaded_file)
+                text = extract_text_from_pdf(uploaded_file, force_ocr=force_ocr)
             elif file_type == "docx":
                 text = extract_text_from_docx(uploaded_file)
+            elif file_type in ["jpg", "jpeg", "png"]:
+                text = extract_text_from_image(uploaded_file)
             else:
                 st.error("Unsupported file format.")
                 return
