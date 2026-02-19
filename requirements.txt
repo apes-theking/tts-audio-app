@@ -5,4 +5,5 @@ python-docx
 pytesseract
 pdf2image
 pillow
-pytest
+opencv-python-headless
+numpy
