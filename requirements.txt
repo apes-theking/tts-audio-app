@@ -2,3 +2,8 @@ streamlit
 edge-tts
 pymupdf
 python-docx
+pytesseract
+pdf2image
+pillow
+opencv-python-headless
+numpy
