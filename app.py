@@ -30,7 +30,7 @@ def process_image_for_ocr(image, threshold_value=128):
 
     # Convert PIL Image to numpy array
     img_array = np.array(image)
-
+    
     # Convert to grayscale
     if len(img_array.shape) == 3 and img_array.shape[2] == 3:
         gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
@@ -39,14 +39,14 @@ def process_image_for_ocr(image, threshold_value=128):
     else:
         # Assuming already grayscale
         gray = img_array
-
+    
     # Apply Sharpening Kernel
     kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
     sharpened = cv2.filter2D(gray, -1, kernel)
 
     # Apply Binary Threshold
     _, thresh = cv2.threshold(sharpened, threshold_value, 255, cv2.THRESH_BINARY)
-
+    
     return thresh
 
 def extract_text_from_image(image):
@@ -66,7 +66,7 @@ def extract_text_from_pdf(file, force_ocr=False):
                 pages.append(page.get_text())
 
     total_text_len = sum(len(p.strip()) for p in pages)
-
+    
     # Fallback to OCR if forced, or if extracted text is empty/sparse
     if force_ocr or total_text_len < 50:
         images = convert_from_bytes(pdf_bytes)
@@ -89,10 +89,10 @@ def extract_text_from_docx(file):
              current_chunk = para_text
         else:
              current_chunk += para_text
-
+    
     if current_chunk:
         pages.append(current_chunk)
-
+        
     return pages
 
 def clean_text(text):
@@ -153,7 +153,7 @@ def main():
     # input_method removed as per requirement, relying on file uploader for camera on mobile
 
     uploaded_file = st.file_uploader("📄 Upload File or Take Photo (Tap here ➔ Camera)", type=["pdf", "docx", "jpg", "jpeg", "png"])
-
+    
     # Initialize Session State
     if "pages" not in st.session_state:
         st.session_state.pages = []
@@ -165,7 +165,7 @@ def main():
         st.session_state.last_force_ocr = False
     if "last_threshold_value" not in st.session_state:
         st.session_state.last_threshold_value = 128
-
+    
     current_file_id = None
     if uploaded_file is not None:
         # Simple ID: name + size
@@ -188,7 +188,7 @@ def main():
 
         if file_changed or ocr_changed or (is_image and threshold_changed):
             file_type = uploaded_file.name.split(".")[-1].lower()
-
+            
             with st.spinner("Processing..."):
                 try:
                     pages = []
@@ -222,13 +222,13 @@ def main():
                     st.session_state.last_processed_file_id = current_file_id
                     st.session_state.last_force_ocr = force_ocr
                     st.session_state.last_threshold_value = threshold_val
-
+                    
                     # Initialize editor content
                     if cleaned_pages:
                         st.session_state.editor = cleaned_pages[0]
                     else:
                         st.session_state.editor = ""
-
+                    
                 except Exception as e:
                     st.error(f"Error processing document: {e}")
                     return
@@ -261,18 +261,18 @@ def main():
             if st.button("Generate Audio for Whole Document"):
                 save_editor_content() # Save current edits first
                 full_text = "\n".join(st.session_state.pages)
-
+                
                 if not full_text.strip():
                     st.warning("No text found in the document.")
                 else:
                     with st.spinner("Generating audio..."):
                         try:
                             audio_bytes = asyncio.run(generate_audio(full_text, selected_voice))
-
+                            
                             st.success("Audio generated successfully!")
-
+                            
                             st.audio(audio_bytes, format="audio/mp3")
-
+                            
                             st.download_button(
                                 label="Download MP3",
                                 data=audio_bytes,
