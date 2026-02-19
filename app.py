@@ -67,6 +67,8 @@ def extract_text_from_pdf(file, force_ocr=False):
 
     total_text_len = sum(len(p.strip()) for p in pages)
 
+    total_text_len = sum(len(p.strip()) for p in pages)
+    
     # Fallback to OCR if forced, or if extracted text is empty/sparse
     if force_ocr or total_text_len < 50:
         images = convert_from_bytes(pdf_bytes)
@@ -194,6 +196,21 @@ def main():
              is_image = True
              threshold_val = st.slider("Adjust Shadow/Contrast (Threshold)", 0, 255, 128, help="Slide until the text is clear black and the background is white.")
 
+    uploaded_file = st.file_uploader("📄 Upload File or Take Photo (Tap here ➔ Camera)", type=["pdf", "docx", "jpg", "jpeg", "png"])
+    
+    # Initialize Session State
+    if "pages" not in st.session_state:
+        st.session_state.pages = []
+    if "current_page" not in st.session_state:
+        st.session_state.current_page = 0
+    if "last_processed_file_id" not in st.session_state:
+        st.session_state.last_processed_file_id = None
+    if "last_force_ocr" not in st.session_state:
+        st.session_state.last_force_ocr = False
+    if "last_threshold_value" not in st.session_state:
+        st.session_state.last_threshold_value = 128
+    
+    current_file_id = None
     if uploaded_file is not None:
         # Check if file changed or OCR settings/Threshold changed
         file_changed = (st.session_state.last_processed_file_id != current_file_id)
