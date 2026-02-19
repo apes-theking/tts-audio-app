@@ -7,19 +7,13 @@ import docx
 
 def extract_text_from_pdf(file):
     """Extracts text from a PDF file."""
-    text = ""
     with fitz.open(stream=file.read(), filetype="pdf") as doc:
-        for page in doc:
-            text += page.get_text()
-    return text
+        return "".join(page.get_text() for page in doc)
 
 def extract_text_from_docx(file):
     """Extracts text from a DOCX file."""
     doc = docx.Document(file)
-    text = ""
-    for para in doc.paragraphs:
-        text += para.text + "\n"
-    return text
+    return "".join(para.text + "\n" for para in doc.paragraphs)
 
 def clean_text(text):
     """Cleans extracted text by removing excessive newlines and whitespace."""
@@ -30,11 +24,11 @@ def clean_text(text):
 async def generate_audio(text, voice):
     """Generates audio from text using edge-tts."""
     communicate = edge_tts.Communicate(text, voice)
-    audio_data = b""
+    audio_chunks = []
     async for chunk in communicate.stream():
         if chunk["type"] == "audio":
-            audio_data += chunk["data"]
-    return audio_data
+            audio_chunks.append(chunk["data"])
+    return b"".join(audio_chunks)
 
 def main():
     st.title("Document to Speech Converter")
